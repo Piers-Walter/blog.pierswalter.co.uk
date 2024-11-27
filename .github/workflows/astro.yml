@@ -54,6 +54,10 @@ jobs:
             echo "Unable to determine package manager"
             exit 1
           fi
+      - name: Install Playwright
+        run: npm install -D @playwright/test@latest
+      - name: Install Playwright Browsers
+        run: npx playwright install --with-deps
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
