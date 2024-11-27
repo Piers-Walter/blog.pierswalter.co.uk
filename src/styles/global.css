@@ -22,7 +22,7 @@ body {
   font-family: sans-serif;
   margin: 0;
   padding: 0;
-  text-align: left;
+  text-align: justify;
   background: linear-gradient(var(--gray-gradient)) no-repeat;
   background-size: 100% 600px;
   word-wrap: break-word;
@@ -35,7 +35,7 @@ main {
   width: 720px;
   max-width: calc(100% - 2em);
   margin: auto;
-  padding: 3em 1em;
+  padding: 1em 1em;
 }
 h1,
 h2,
@@ -68,10 +68,10 @@ b {
   font-weight: 700;
 }
 a {
-  color: var(--accent);
+  text-decoration: underline;
 }
 a:hover {
-  color: var(--accent);
+  color: var(--accent-dark);
 }
 p {
   margin-bottom: 1em;
@@ -85,9 +85,6 @@ textarea {
 }
 input {
   font-size: 16px;
-}
-table {
-  width: 100%;
 }
 img {
   max-width: 100%;
@@ -150,4 +147,26 @@ hr {
     box-shadow: theme("boxShadow.xl");
     margin-bottom: 6px;
   }
+}
+
+table {
+  width: 100%;
+  border: 1px solid rgb(var(--gray-light));
+  text-align: start;
+}
+
+th {
+  border: 1px solid rgb(var(--gray-light));
+  padding: 10px 10px 10px 10px;
+}
+
+td {
+  vertical-align: top;
+  border: 1px solid rgb(var(--gray-light));
+  padding: 10px 10px 10px 10px;
+}
+
+ol {
+  list-style: auto;
+  /* margin-left: 20px; */
 }
