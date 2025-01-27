@@ -1,0 +1,58 @@
+---
+title: "Using watsonx.data through JDBC in IBM Business Automation Workflow"
+description: "Using custom JDBC drivers with IBM Business Automation Workflow"
+pubDate: "Jan 27 2024"
+tags: ["watsonx", "baw", "jdbc", "presto"]
+authors: ["Piers Walter", "Konrad Gurbiel"]
+---
+
+import implementation from "../../images/blog/wxdata-baw/implementation.jpg";
+import { Image } from "astro:assets";
+
+## Overview
+
+When making use of Business Automation Workflow (BAW), it's common to want to access a SQL datasource. BAW allows the adding of additional datasources to the datasources which are available to it, including custom JDBC implementations. In this case, I'll be exploring using the PrestoDB JDBC driver to connect to watsonx.data, IBM's data lakehouse offering. I'm making use of Cloud Pak for Business Automation (CP4BA) running on an OpenShift cluster, which was installed with the [Cloud Pak Deployer](https://ibm.github.io/cloud-pak-deployer/), as well as a SaaS implementation of watsonx.data.
+
+#### JDBC Driver Installation
+
+As BAW doesn't come with a JDBC driver for PrestoDB out of the box, it needs to be provided. This can be done by copying the relevant `.jar` file to the pod which is running the Business Automation Studio. On our cluster this is a pod called `icp4adeploy-bastudio-deployment-0`, it may be called something different on your installation. This jar file then needs to be copied in to the `/opt/ibm/bawfile/` directory, which is mounted on a PVC so it will be maintained across pod restarts. You can get the latest version of the PrestoDB jar from [here](https://prestodb.io/getting-started/).
+
+To copy the PrestoDB jar to your pod, run the following command from your local machine which has the file:
+
+```bash
+oc cp presto-jdbc-0.290.jar icp4adeploy-bastudio-deployment-0:/opt/ibm/bawfile/presto-jdbc-0.290.jar
+```
+
+<br />
+With the jar file copied, delete the pod, which will cause it to reload.
+
+#### Configuring the JDBC Driver
+
+In order to use the JDBC driver which was uploaded in the earlier part, BAW needs to be informed the driver is there, available, and how to consume it. We need to open the OpenShift secret called `wfs-liberty-custom-xml-secret` and edit it. This secret should contain a single XML file secret with the key `sensitiveCustomConfig`. Inside the `<server>` tag, we need to add the following code block, with some values changed as to match your watsonx.data deployment:
+
+```xml
+<library id="prestoJDBCLib">
+  <file name="/opt/ibm/bawfile/presto-jdbc-0.290.jar"/>
+</library>
+
+<dataSource id="jdbc/presto" jndiName="jdbc/presto" type="java.sql.Driver">
+  <jdbcDriver java.sql.Driver="com.facebook.presto.jdbc.PrestoDriver" libraryRef="prestoJDBCLib"/>
+  <properties SSL="true" URL="jdbc:presto://host:port"
+    user="presto-username"
+    password="presto-password"/>
+</dataSource>
+```
+
+With this entered into the secret, it's configured and ready to use. Simply restart the pod again and it will be an available connection
+
+#### Using the new watsonx.data JDBC connection in BAW
+
+Inside of BAW watsonx.data can be queried through a service task. Create a new service task and select the following options:
+
+On the implementation tab set the implementation to `SQLConnector` and the Operation to `execute` as shown below
+
+<Image src={implementation} alt="A screenshot of the BAW interface" />
+
+On the Data Mapping tab, set the dataSourceName to `jdbc/presto`, this matches the configuration XML file we set up earlier.
+
+This service can now be configured like any other SQL connection using the [IBM Documentation](https://www.ibm.com/docs/en/baw/24.x?topic=service-invoking-sql-integration-flows)
