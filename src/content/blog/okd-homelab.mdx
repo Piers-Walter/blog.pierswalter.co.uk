@@ -1,0 +1,185 @@
+---
+title: "Running OpenShift at Home"
+description: "Running OKD on a Micro PC on your Desk"
+pubDate: "May 13 2025"
+tags: ["OpenShift", "OKD", "Kubernetes", "homelab"]
+---
+
+import { SiYaml } from "react-icons/si";
+
+As a platform engineer, I do a lot of work with OpenShift, kubernetes and full stack development. I've also recently been getting into homelabbing so I wanted a way to have my own OpenShift installation at home. OpenShift has an upstream distribution called [OKD](https://okd.io/) which is totally free to use, and lets you try out features before they are released in the mainstream product.
+
+With this installed, it means I now have a single node OpenShift installation which I can use to deploy applications, VMs and try out new ideas easily.
+
+### Hardware
+
+As it's a single node installation, there's only one node to be the master and worker node. In my case it's a Dell 3050 Micro with the following specs:
+
+- Processor: Intel Core i7-6700T @ 2.8GHz
+- RAM: 16GB
+- Storage: 240GB Sata SSD
+
+While these specs aren't a lot, they're enough for a light workload and to get started. While your hardware may be different, the installation process should be the same so you can follow along with this guide. These machines can be sourced relatively cheap from somewhere like eBay, for up to around £100 depending on exact spec and they make good workers for multi node clusters as they're small, cheap and x86 based meaning wide compatibility.
+
+I also have a Synology DS418play NAS in my setups which is being used as a DNS server and a NFS provider for a [dynamic NFS provisioner](https://github.com/kubernetes-sigs/nfs-subdir-external-provisioner).
+
+### Pre-Installation
+
+Before we get started, we need to generate an ISO image we can boot on our PC, as well as configure a DNS server on our network which OKD will use once it's installed.
+
+#### Automated Installer
+
+I used the automated installer for this install. It provides a nice GUI to use to configure your cluster, and makes it clear what you need to fill in where. To get started with it, make sure you have podman installed and create a file called `installer.yaml` with the following contents, replacing `<HOST_IP>` with the IP address of the machine running podman. This will generate an installer which will let you generate an ISO for OKD 4.20 running on CentOS stream 9.0.20250411-0. 
+
+<details>
+  <summary class="cursor-pointer"><SiYaml size="20" className="inline-block mr-1 align-text-bottom" />installer.yaml</summary>
+  ```yaml
+  apiVersion: v1
+  kind: ConfigMap
+  metadata:
+    name: config
+  data:
+    ASSISTED_SERVICE_HOST: <HOST_IP>:8090
+    ASSISTED_SERVICE_SCHEME: http
+    AUTH_TYPE: none
+    DB_HOST: 127.0.0.1
+    DB_NAME: installer
+    DB_PASS: admin
+    DB_PORT: "5432"
+    DB_USER: admin
+    DEPLOY_TARGET: onprem
+    DISK_ENCRYPTION_SUPPORT: "false"
+    DUMMY_IGNITION: "false"
+    ENABLE_SINGLE_NODE_DNSMASQ: "false"
+    HW_VALIDATOR_REQUIREMENTS: '[{"version":"default","master":{"cpu_cores":4,"ram_mib":16384,"disk_size_gb":100,"installation_disk_speed_threshold_ms":10,"network_latency_threshold_ms":100,"packet_loss_percentage":0},"worker":{"cpu_cores":2,"ram_mib":8192,"disk_size_gb":100,"installation_disk_speed_threshold_ms":10,"network_latency_threshold_ms":1000,"packet_loss_percentage":10},"sno":{"cpu_cores":8,"ram_mib":16384,"disk_size_gb":100,"installation_disk_speed_threshold_ms":10},"edge-worker":{"cpu_cores":2,"ram_mib":8192,"disk_size_gb":15,"installation_disk_speed_threshold_ms":10}}]'
+    IMAGE_SERVICE_BASE_URL: http://<HOST_IP>:8888
+    IPV6_SUPPORT: "true"
+    ISO_IMAGE_TYPE: "full-iso"
+    LISTEN_PORT: "8888"
+    NTP_DEFAULT_SERVER: ""
+    POSTGRESQL_DATABASE: installer
+    POSTGRESQL_PASSWORD: admin
+    POSTGRESQL_USER: admin
+    PUBLIC_CONTAINER_REGISTRIES: 'quay.io,registry.ci.openshift.org'
+    SERVICE_BASE_URL: http://<HOST_IP>:8090
+    STORAGE: filesystem
+    OS_IMAGES: '[{"openshift_version":"4.20","cpu_architecture":"x86_64","url":"https://rhcos.mirror.openshift.com/art/storage/prod/streams/c9s/builds/9.0.20250411-0/x86_64/scos-9.0.20250411-0-live-iso.x86_64.iso","version":"9.0.20250411-0"}]'
+    RELEASE_IMAGES: '[{"openshift_version":"4.20","cpu_architecture":"x86_64","cpu_architectures":["x86_64"],"url":"quay.io/okd/scos-release@sha256:43157228ba3814b33bf011cbea16a07b92180825e6f3091d42c07d2e041712d9","version":"4.20.0-okd-scos.ec.0","default":true}]'
+    ENABLE_UPGRADE_AGENT: "false"
+    ENABLE_OKD_SUPPORT: "true"
+  ---
+  apiVersion: v1
+  kind: Pod
+  metadata:
+    labels:
+      app: assisted-installer
+    name: assisted-installer
+  spec:
+    containers:
+    - args:
+      - run-postgresql
+      image: quay.io/sclorg/postgresql-12-c8s:latest
+      name: db
+      envFrom:
+      - configMapRef:
+          name: config
+    - image: quay.io/edge-infrastructure/assisted-installer-ui:latest
+      name: ui
+      ports:
+      - hostPort: 8080
+      envFrom:
+      - configMapRef:
+          name: config
+    - image: quay.io/edge-infrastructure/assisted-image-service:latest
+      name: image-service
+      ports:
+      - hostPort: 8888
+      envFrom:
+      - configMapRef:
+          name: config
+    - image: quay.io/edge-infrastructure/assisted-service:latest
+      name: service
+      ports:
+      - hostPort: 8090
+      envFrom:
+      - configMapRef:
+          name: config
+    restartPolicy: Never
+  ```
+</details>
+
+<br/>
+With the YAML file created, make sure you have your podman machine running, if not you can create one with 
+```sh
+podman machine init
+podman machine start
+```
+
+<br/>
+<details>
+<summary>Newer Versions of OKD</summary>
+While these were the correct versions when I wrote this, that'll probably change. To get the latest URLs and versions do the following things
+
+  **OS_IMAGES**: Download the latest version of the openshift-install program from here: https://github.com/okd-project/okd/releases, and run the following command: 
+  ```sh
+  ./openshift-install coreos print-stream-json | jq .architectures.x86_64.artifacts.metal.formats.iso.disk.location
+  ```
+  Replace the long URL in the OS_IMAGES section above with the output of that command and update the version number to the version number after `/builds/` in the URL.
+
+  **RELEASE_IMAGES**: The release image can also be updated by going to https://github.com/okd-project/okd/releases and getting the url from `Pull From:` section. The version number will be the `Name:` field from the latest release there.
+</details>
+#### DNS
+You will need to set 3 DNS records for your cluster:
+| HOSTNAME | TYPE | IP |
+| - | - | - |
+| `api.cluster-name.base-domain` | A | IP_OF_NODE_PC |
+| `api-int.cluster-name.base-domain` | A | IP_OF_NODE_PC | 
+| `*.apps.cluster-name.base-domain` | A | IP_OF_NODE_PC |
+
+These are needed so that you can access your cluster UI, and the nodes can communicate with each other (even though we only have one in this case it's still needed).
+
+In my case I have my url in the format `api.cluster.lab.pierswalter.co.uk`, making lab.pierswalter.co.uk my base domain, and the cluster name "cluster". You can in theory set these using the DNS provided by your domain provider, although it's considered bad practice to publicly list private ip addresses. What I would recommend instead is running a DNS server somewhere inside your home network. In my case I used my Synology NAS but you could also use something like [pi-hole](https://pi-hole.net/) to do this, or even your home router if it provides the functionality. 
+
+Whichever you end up doing, you will want to make sure your computer is using that DNS server instead of the network default so that it can resolve the ip addresses. Check you've got it working as intended by running
+`dig @DNS.SERVER.IP.ADDRESS api.cluster-name.base-domain`
+
+<details>
+<summary>Synology DNS Steps</summary>
+1. Install DNS Server from the Package Center
+2. Open and create a Primary Zone, set the domain name to something like `lab.pierswalter.co.uk`, you don't have to own the domain to use it internally.
+3. Set the primary DNS server to the default one in your network, typically something like 192.168.0.1
+4. Save and then double click on the Zone
+5. Add 3 new A records for api.cluster, api-int.cluster and *.apps.cluster with the IP address of the machine that will be hosting OpenShift
+6. Save and test with `dig @Synology.IP.ADDRESS api.cluster-name.base-domain`
+</details>
+### Installation
+On the machine with podman installed, run the following command to launch the automated installer:
+```sh
+podman kube play installer.yaml
+```
+<br/>
+When this runs you can then go to http://localhost:8080 and follow the steps to create a new cluster
+
+1. Select Create New cluster
+2. Enter the cluster name and the base domain e.g. `lab.pierswalter.co.uk`
+3. Set the pull secret to `{"auths":{"fake":{"auth":"aWQ6cGFzcwo="}}}`. This is a dummy pull secret as OKD doesn't need one
+4. Set the number of control plane nodes to 1, and set the network configuration to "Static IP, bridges, and bonds" unless you have DHCP setup and know what you're doing
+5. Press next, and on the network-wide config page, set the DNS to the ip address of the DNS server you setup earlier. 
+6. The machine network should be set to your network's IP range, e.g. 192.168.0.0/24
+7. The default gateway should be the IP address of your router, typically something like 192.168.0.1
+8. On the host-specific page, enter the MAC address of your computer's network interface. You can typically get this from your router or the OKD machine if it's booted with an operating system
+9. Set the IP address to the IP of the machine, this IP will be fixed so make sure it's reserved in your router to make sure no other device gets assigned it.
+10. Press next and skip the operator page
+11. Select add host, provide and SSH key to allow you to login to the node, and download the ISO. If it doesn't download, this is probably because the underlying container is still downloading the ISO. You can check the progress with `curl -v localhost:8888/health` and making sure it doesn't return a 503 error, as that means it's still downloading
+12. Burn the provided ISO onto a USB stick using a tool like [Balena Etcher](https://etcher.balena.io/) and boot it from your OKD machine.
+13. Wait for the PC to show up under available hosts, this may take up to around 10 minutes.
+13. After that keep going through the stages until the installation starts. The installation may take around an hour to be fully complete.
+<br/>
+
+Make sure to download the provided kubeconfig file and keep this somewhere safe, it's key to being able to access your cluster. Also save a copy of the kubeadmin password, as we will use this to login to the UI.
+
+### Configuration
+Now we have our cluster installed it should be accessible from https://console-openshift-console.apps.cluster.base-domain . Use `kubeadmin` as the username and the password from earlier to log in. From here the cluster can be used as any other cluster. If you would like to have persistent storage available for your containers, an easy way to do this is to setup and NFS host on your network, and use the kubernetes [dynamic NFS provisioner](https://github.com/kubernetes-sigs/nfs-subdir-external-provisioner) to provide Filesystem Persistent Volumes (PV) which are created from PVCs. 
+
+### Conclusion
+With this setup we have a fully functional OKD cluster running on our home network, which you can use to experiment, practice and host services. This could be things like running VMs with kubevirt, hosting web services or finding new ways to break and fix things.
