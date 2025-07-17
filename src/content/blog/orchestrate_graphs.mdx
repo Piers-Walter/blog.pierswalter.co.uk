@@ -3,7 +3,7 @@ title: "Presenting Graphs & Images on watsonx Orchestrate"
 description: "How to get IBM watsonx Orchestrate to show images and graphs"
 pubDate: "July 17 2025"
 tags: ["watsonx", "orchestrate", "IBM", "markdown", "images", "graphs"]
-authors: ["Piers Walter", "Niamh Morrissey", "William Bittles"]
+authors: ["Piers Walter", "Niamh Morrissey", "William Bittles", "Konrad Gurbiel"]
 ---
 
 import { Image } from "astro:assets";
@@ -40,6 +40,18 @@ In the Python code below, you'll notice there are a lot of values which are hard
 ***REDACTED***/***REDACTED***/AKIAIOSFODNN7EXAMPLE?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=***REDACTED***%2F20250708%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20250708T162638Z&X-Amz-Expires=600&X-Amz-SignedHeaders=host&X-Amz-Signature=ee74c3368e88349eb0cb6fa14f7c319e3ca319facd84bd52230204f7fefaa273
 ```
 which can't be used to access the image. For now a workaround is to include all non-sensitive parameters in the source code itself, the only issue with this is it means there's no way to have different values for the draft and live environments.
+
+### Connecting the Tool to COS
+As the tool needs to use HMAC credentials to connect to the bucket, it's very important to keep the secret access key secret. In orchestrate this is managed through the use of connections, which the Python tool can then programmatically access through the following python snippet
+```python
+cos_creds = connections.key_value("cos_bucket_connection")
+COS_SECRET_ACCESS_KEY = cos_creds["COS_SECRET_ACCESS_KEY"]
+```
+This requires us to have a connection setup called `cos_bucket_connection` which is a key-value style connection which contains a key of `COS_SECRET_ACCESS_KEY`. This can be done using the orchestrate CLI or in the UI. To do this with the cli you can use the following command
+```sh
+$ orchestrate connections set-credentials  --app-id cos_bucket_connection --env draft -e "COS_SECRET_ACCESS_KEY=SECRET_GOES_HERE"
+```
+Read more about Orchestrate connections and configuration [here in the developer docs](https://developer.watson-orchestrate.ibm.com/connections/overview)
 
 ### Example Code
 Below is the python code for the tool we used to generate an example image and return the markdown for the agent to present to the user. This can be imported as a tool into watsonx Orchestrate by following the latest instructions on the [watsonx Orchestrate Developer Docs site](https://developer.watson-orchestrate.ibm.com/tools/deploy_tool).
