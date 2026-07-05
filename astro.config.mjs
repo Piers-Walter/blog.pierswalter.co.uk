@@ -12,15 +12,17 @@ import remarkMermaid from 'remark-mermaidjs'
 
 import expressiveCode from 'astro-expressive-code';
 
+import rehypeExternalLinks from 'rehype-external-links';
+
 // https://astro.build/config
 export default defineConfig({
     site: 'https://blog.pierswalter.co.uk',
-    integrations: [expressiveCode(), mdx(), sitemap(), tailwind(), react()],
+    integrations: [expressiveCode(), mdx({rehypePlugins: [[rehypeExternalLinks, { target: '_blank', rel: [] }]],}), sitemap(), tailwind(), react()],
     redirects: {
         '/blog': '/'
     },
     markdown: {
         remarkPlugins: [remarkMermaid],
-
+        rehypePlugins: [[rehypeExternalLinks, { target: '_blank', rel: [] }]],
     }
 });
